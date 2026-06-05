@@ -235,6 +235,7 @@ CREATE TABLE quiz_attempts (
   is_submitted TINYINT(1) DEFAULT 0,
   started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   submitted_at TIMESTAMP NULL,
+  option_maps JSON COMMENT 'Per-question display-key→original-key mapping for randomised options',
   FOREIGN KEY (quiz_id) REFERENCES quizzes(id) ON DELETE CASCADE,
   FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_quiz (quiz_id),

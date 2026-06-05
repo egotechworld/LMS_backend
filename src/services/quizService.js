@@ -3,6 +3,7 @@ const progressRepository = require('../repositories/progressRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const ApiError = require('../utils/ApiError');
 const { createNotification } = require('../utils/notificationHelper');
+const { buildShuffledQuiz } = require('../utils/shuffleQuiz');
 
 class QuizService {
   // ── Quiz management (instructor) ─────────────────────────────────────────
@@ -107,7 +108,7 @@ class QuizService {
   // ── Student quiz flow ─────────────────────────────────────────────────────
 
   /**
-   * Returns quiz meta + questions (without correct answers).
+   * Returns quiz meta + questions (without correct answers, options shuffled).
    * Only accessible after the lesson is marked complete.
    */
   async getQuizForStudent(studentId, lessonId) {
@@ -125,13 +126,20 @@ class QuizService {
       throw new ApiError('Retake is not allowed for this quiz', 403);
     }
 
-    const questions = await quizRepository.getQuestionsForStudent(quiz.id);
+    // Fetch raw questions (randomised order from DB via ORDER BY RAND())
+    const rawQuestions = await quizRepository.getQuestionsForStudent(quiz.id);
+
+    // Shuffle option positions — each call produces a different layout
+    const { questions } = buildShuffledQuiz(rawQuestions);
+
     return { quiz, questions };
   }
 
   /**
-   * Start a new attempt (returns attemptId + start time so the frontend
-   * can drive the countdown timer).
+   * Start a new attempt.
+   * Questions are randomised (order + option positions) and the option map
+   * is persisted in the attempt row so grading can translate display keys
+   * back to the original DB keys.
    */
   async startAttempt(studentId, quizId) {
     const quiz = await this._getQuizOrThrow(quizId);
@@ -143,29 +151,47 @@ class QuizService {
       throw new ApiError('Retake is not allowed for this quiz', 403);
     }
 
-    // Clean up any unsubmitted attempt before creating a new one
+    // Resume existing in-progress attempt — return the same shuffled questions
     const inProgress = prior.find((a) => !a.is_submitted);
     if (inProgress) {
-      // Return the existing in-progress attempt so the student can continue
-      const questions = await quizRepository.getQuestionsForStudent(quizId);
-      return { attemptId: inProgress.id, quiz, questions, started_at: inProgress.started_at };
+      const rawQuestions = await quizRepository.getQuestionsForStudent(quizId);
+      // Re-apply the STORED option maps so the student sees the same layout on resume
+      const { questions } = _applyStoredOptionMaps(rawQuestions, inProgress.option_maps);
+      return {
+        attemptId: inProgress.id,
+        quiz,
+        questions,
+        started_at: inProgress.started_at,
+        time_limit_minutes: quiz.time_limit_minutes,
+      };
     }
+
+    // New attempt — randomise question order + option positions
+    const rawQuestions = await quizRepository.getQuestionsForStudent(quizId);
+    const { questions, optionMaps } = buildShuffledQuiz(rawQuestions);
 
     const attemptId = await quizRepository.createAttempt({
       quizId,
       studentId,
       totalMarks: quiz.total_marks,
+      optionMaps,
     });
 
     const attempt = await quizRepository.findAttemptById(attemptId);
-    const questions = await quizRepository.getQuestionsForStudent(quizId);
-    return { attemptId, quiz, questions, started_at: attempt.started_at };
+
+    return {
+      attemptId,
+      quiz,
+      questions,
+      started_at: attempt.started_at,
+      time_limit_minutes: quiz.time_limit_minutes,
+    };
   }
 
   /**
    * Submit answers for an attempt.
-   * Handles both manual submit and auto-submit (time-up).
-   * Returns score, total, per-question breakdown with correct answers.
+   * Translates display keys (a/b/c/d as shown to student) back to original
+   * DB keys using the stored option_maps before auto-marking.
    */
   async submitAttempt(studentId, attemptId, answers) {
     const attempt = await quizRepository.findAttemptById(attemptId);
@@ -175,31 +201,43 @@ class QuizService {
 
     const quiz = await quizRepository.findById(attempt.quiz_id);
 
-    // Validate time limit (server-side guard)
+    // Server-side time guard (10-second grace window for network latency)
     if (quiz.time_limit_minutes > 0) {
       const elapsedMs = Date.now() - new Date(attempt.started_at).getTime();
       const limitMs = quiz.time_limit_minutes * 60 * 1000;
-      // Allow a 10-second grace period for network latency
-      if (elapsedMs > limitMs + 10000) {
-        // Auto-mark with whatever was answered
+      if (elapsedMs > limitMs + 10_000) {
+        // Time expired — auto-submit with whatever answers were provided
       }
     }
 
+    // Fetch questions WITH correct answers for grading
     const questions = await quizRepository.getQuestionsForGrading(attempt.quiz_id);
-    const answerMap = new Map((answers || []).map((a) => [a.questionId, a.selectedOption]));
 
+    // Build a lookup: questionId → displaySelectedOption
+    const displayAnswerMap = new Map(
+      (answers || []).map((a) => [Number(a.questionId), a.selectedOption])
+    );
+
+    const optionMaps = attempt.option_maps || {};
     let score = 0;
+
     for (const q of questions) {
-      const selected = answerMap.get(q.id) || null;
-      const isCorrect = selected === q.correct_option;
+      const displaySelected = displayAnswerMap.get(q.id) || null;
+
+      // Translate display key → original DB key using the stored map
+      const originalSelected = displaySelected
+        ? (optionMaps[q.id]?.[displaySelected] ?? displaySelected)
+        : null;
+
+      const isCorrect = originalSelected !== null && originalSelected === q.correct_option;
       const marksAwarded = isCorrect ? q.marks : 0;
       score += marksAwarded;
 
-      if (selected) {
+      if (originalSelected) {
         await quizRepository.saveAnswer({
           attemptId,
           questionId: q.id,
-          selectedOption: selected,
+          selectedOption: originalSelected, // store original key, not display key
           isCorrect,
           marksAwarded,
         });
@@ -208,14 +246,15 @@ class QuizService {
 
     await quizRepository.submitAttempt(attemptId, score);
 
-    // Build result with correct answers shown
+    // Full breakdown with correct answers for immediate review
     const breakdown = await quizRepository.getAttemptAnswers(attemptId);
 
     return {
       attemptId,
       score,
       totalMarks: quiz.total_marks,
-      percentage: quiz.total_marks > 0 ? ((score / quiz.total_marks) * 100).toFixed(2) : '0.00',
+      percentage:
+        quiz.total_marks > 0 ? ((score / quiz.total_marks) * 100).toFixed(2) : '0.00',
       breakdown,
     };
   }
@@ -255,6 +294,55 @@ class QuizService {
     if (!quiz) throw new ApiError('Quiz not found', 404);
     return quiz;
   }
+}
+
+/**
+ * Re-apply a previously stored optionMaps to a set of raw questions
+ * so a resuming student sees exactly the same option layout as before.
+ *
+ * @param {object[]} rawQuestions  from getQuestionsForStudent()
+ * @param {object}   optionMaps   stored in attempt.option_maps
+ * @returns {{ questions: object[] }}
+ */
+function _applyStoredOptionMaps(rawQuestions, optionMaps) {
+  const questions = rawQuestions.map((q) => {
+    const map = optionMaps[q.id];
+    if (!map) {
+      // Fallback: no map stored (e.g. legacy row) — return as-is without correct_option
+      return {
+        id: q.id,
+        quiz_id: q.quiz_id,
+        question_text: q.question_text,
+        marks: q.marks,
+        displayOptions: [
+          { key: 'a', text: q.option_a },
+          { key: 'b', text: q.option_b },
+          { key: 'c', text: q.option_c },
+          { key: 'd', text: q.option_d },
+        ],
+      };
+    }
+
+    // Invert map: originalKey → displayKey
+    const invertedMap = {};
+    Object.entries(map).forEach(([dk, ok]) => { invertedMap[ok] = dk; });
+
+    const optionTexts = { a: q.option_a, b: q.option_b, c: q.option_c, d: q.option_d };
+    const displayOptions = ['a', 'b', 'c', 'd'].map((displayKey) => {
+      const originalKey = map[displayKey];
+      return { key: displayKey, text: optionTexts[originalKey] };
+    });
+
+    return {
+      id: q.id,
+      quiz_id: q.quiz_id,
+      question_text: q.question_text,
+      marks: q.marks,
+      displayOptions,
+    };
+  });
+
+  return { questions };
 }
 
 module.exports = new QuizService();

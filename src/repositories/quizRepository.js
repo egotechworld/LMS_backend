@@ -86,11 +86,15 @@ class QuizRepository {
     return this.getQuestions(quizId);
   }
 
-  /** Returns questions WITHOUT correct_option — safe to send to students */
+  /**
+   * Returns questions in a RANDOM order — safe to send to students.
+   * correct_option is intentionally excluded; grading uses getQuestionsForGrading().
+   * Question order is randomised per call (each student gets a different sequence).
+   */
   async getQuestionsForStudent(quizId) {
     const [rows] = await pool.execute(
-      `SELECT id, quiz_id, question_text, option_a, option_b, option_c, option_d, marks, order_index
-       FROM quiz_questions WHERE quiz_id = ? ORDER BY order_index, id`,
+      `SELECT id, quiz_id, question_text, option_a, option_b, option_c, option_d, marks
+       FROM quiz_questions WHERE quiz_id = ? ORDER BY RAND()`,
       [quizId]
     );
     return rows;
@@ -110,11 +114,11 @@ class QuizRepository {
   }
 
   // ── Attempts ─────────────────────────────────────────────────────────────
-  async createAttempt({ quizId, studentId, totalMarks }) {
+  async createAttempt({ quizId, studentId, totalMarks, optionMaps }) {
     const [result] = await pool.execute(
-      `INSERT INTO quiz_attempts (quiz_id, student_id, total_marks)
-       VALUES (?, ?, ?)`,
-      [quizId, studentId, totalMarks]
+      `INSERT INTO quiz_attempts (quiz_id, student_id, total_marks, option_maps)
+       VALUES (?, ?, ?, ?)`,
+      [quizId, studentId, totalMarks, JSON.stringify(optionMaps || {})]
     );
     return result.insertId;
   }
@@ -124,7 +128,14 @@ class QuizRepository {
       `SELECT * FROM quiz_attempts WHERE id = ?`,
       [attemptId]
     );
-    return rows[0] || null;
+    if (!rows[0]) return null;
+    // Parse JSON column back to object
+    const attempt = rows[0];
+    attempt.option_maps =
+      typeof attempt.option_maps === 'string'
+        ? JSON.parse(attempt.option_maps)
+        : attempt.option_maps || {};
+    return attempt;
   }
 
   async getAttemptsByStudent(quizId, studentId) {
