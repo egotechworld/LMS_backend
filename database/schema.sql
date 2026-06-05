@@ -199,9 +199,10 @@ CREATE TABLE quizzes (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (lesson_id) REFERENCES lessons(id) ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
-  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (created_by) REFERENCES users(id),
   INDEX idx_lesson (lesson_id),
-  INDEX idx_course (course_id)
+  INDEX idx_course (course_id),
+  INDEX idx_created_by (created_by)
 );
 
 -- ============================================================

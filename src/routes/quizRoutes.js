@@ -23,9 +23,9 @@ const addQuestionRules = [
   body('marks').optional().isInt({ min: 1 }).withMessage('Marks must be a positive integer'),
 ];
 
-// ── Instructor: quiz bank management ─────────────────────────────────────────
+// ── Static-prefix routes FIRST (avoid conflict with /:id param) ──────────────
 
-// GET /api/quizzes/course/:courseId  — all quizzes for a course
+// GET /api/quizzes/course/:courseId  — all quizzes for a course (instructor)
 router.get(
   '/course/:courseId',
   authenticate,
@@ -33,13 +33,47 @@ router.get(
   quizController.getQuizzesByCourse
 );
 
-// GET /api/quizzes/lesson/:lessonId  — quiz for a specific lesson (instructor view)
+// GET /api/quizzes/lesson/:lessonId/take  — student: get quiz after completing lesson
+router.get(
+  '/lesson/:lessonId/take',
+  authenticate,
+  authorize('student'),
+  quizController.getQuizForStudent
+);
+
+// GET /api/quizzes/lesson/:lessonId  — instructor: quiz for a specific lesson
 router.get(
   '/lesson/:lessonId',
   authenticate,
   authorize('instructor', 'admin'),
   quizController.getQuizByLesson
 );
+
+// DELETE /api/quizzes/questions/:questionId  — must be before /:id
+router.delete(
+  '/questions/:questionId',
+  authenticate,
+  authorize('instructor', 'admin'),
+  quizController.deleteQuestion
+);
+
+// POST /api/quizzes/attempts/:attemptId/submit  — manual or auto-submit
+router.post(
+  '/attempts/:attemptId/submit',
+  authenticate,
+  authorize('student'),
+  quizController.submitAttempt
+);
+
+// GET /api/quizzes/attempts/:attemptId/result  — view score + correct answers
+router.get(
+  '/attempts/:attemptId/result',
+  authenticate,
+  authorize('student'),
+  quizController.getAttemptResult
+);
+
+// ── Quiz CRUD — dynamic :id routes AFTER static prefixes ─────────────────────
 
 // POST /api/quizzes
 router.post(
@@ -49,24 +83,6 @@ router.post(
   createQuizRules,
   quizController.createQuiz
 );
-
-// PUT /api/quizzes/:id
-router.put(
-  '/:id',
-  authenticate,
-  authorize('instructor', 'admin'),
-  quizController.updateQuiz
-);
-
-// DELETE /api/quizzes/:id
-router.delete(
-  '/:id',
-  authenticate,
-  authorize('instructor', 'admin'),
-  quizController.deleteQuiz
-);
-
-// ── Questions ────────────────────────────────────────────────────────────────
 
 // GET /api/quizzes/:quizId/questions  — instructor view (includes correct answers)
 router.get(
@@ -85,30 +101,12 @@ router.post(
   quizController.addQuestion
 );
 
-// DELETE /api/quizzes/questions/:questionId
-router.delete(
-  '/questions/:questionId',
-  authenticate,
-  authorize('instructor', 'admin'),
-  quizController.deleteQuestion
-);
-
 // GET /api/quizzes/:quizId/results  — instructor: see all student results
 router.get(
   '/:quizId/results',
   authenticate,
   authorize('instructor', 'admin'),
   quizController.getQuizResults
-);
-
-// ── Student quiz flow ─────────────────────────────────────────────────────────
-
-// GET /api/quizzes/lesson/:lessonId/take  — get quiz after completing the lesson
-router.get(
-  '/lesson/:lessonId/take',
-  authenticate,
-  authorize('student'),
-  quizController.getQuizForStudent
 );
 
 // POST /api/quizzes/:quizId/start  — start or resume an attempt
@@ -119,20 +117,20 @@ router.post(
   quizController.startAttempt
 );
 
-// POST /api/quizzes/attempts/:attemptId/submit  — manual or auto-submit
-router.post(
-  '/attempts/:attemptId/submit',
+// PUT /api/quizzes/:id
+router.put(
+  '/:id',
   authenticate,
-  authorize('student'),
-  quizController.submitAttempt
+  authorize('instructor', 'admin'),
+  quizController.updateQuiz
 );
 
-// GET /api/quizzes/attempts/:attemptId/result  — view score + correct answers
-router.get(
-  '/attempts/:attemptId/result',
+// DELETE /api/quizzes/:id
+router.delete(
+  '/:id',
   authenticate,
-  authorize('student'),
-  quizController.getAttemptResult
+  authorize('instructor', 'admin'),
+  quizController.deleteQuiz
 );
 
 module.exports = router;

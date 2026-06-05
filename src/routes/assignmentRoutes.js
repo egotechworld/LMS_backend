@@ -56,9 +56,9 @@ router.delete(
   assignmentController.deleteAssignment
 );
 
-// ── Submissions (student) ────────────────────────────────────────────────────
+// ── Submissions ──────────────────────────────────────────────────────────────
 
-// POST /api/assignments/submissions  (file or text)
+// POST /api/assignments/submissions  (file or text) — student
 router.post(
   '/submissions',
   authenticate,
@@ -67,7 +67,7 @@ router.post(
   assignmentController.submitAssignment
 );
 
-// GET /api/assignments/submissions/my
+// GET /api/assignments/submissions/my  — must be BEFORE /:assignmentId param
 router.get(
   '/submissions/my',
   authenticate,
@@ -75,7 +75,7 @@ router.get(
   assignmentController.getMySubmissions
 );
 
-// GET /api/assignments/submissions/:assignmentId
+// GET /api/assignments/submissions/:assignmentId — instructor sees all, student sees own
 router.get(
   '/submissions/:assignmentId',
   authenticate,
