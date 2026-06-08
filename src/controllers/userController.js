@@ -2,6 +2,7 @@ const userService = require('../services/userService');
 const { validationResult } = require('express-validator');
 
 class UserController {
+  // Public registration - students only
   async register(req, res, next) {
     try {
       const errors = validationResult(req);
@@ -14,7 +15,28 @@ class UserController {
 
       res.status(201).json({
         success: true,
-        message: 'User registered successfully',
+        message: 'Student registered successfully',
+        data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Admin-only: register instructor
+  async registerInstructor(req, res, next) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, errors: errors.array() });
+      }
+
+      const userData = req.body;
+      const result = await userService.registerInstructor(userData);
+
+      res.status(201).json({
+        success: true,
+        message: 'Instructor registered successfully',
         data: result
       });
     } catch (error) {
@@ -31,6 +53,19 @@ class UserController {
         success: true,
         message: 'Login successful',
         data: result
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // Get current logged-in user profile
+  async getProfile(req, res, next) {
+    try {
+      const user = await userService.getUserById(req.user.id);
+      res.status(200).json({
+        success: true,
+        data: user
       });
     } catch (error) {
       next(error);

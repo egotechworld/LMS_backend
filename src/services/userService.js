@@ -3,8 +3,12 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 class UserService {
+  // Public registration - students only
   async registerUser(userData) {
-    const { email, password, firstName, lastName, role = 'student' } = userData;
+    const { email, password, firstName, lastName } = userData;
+
+    // Public registration is restricted to students only
+    const role = 'student';
 
     // Check if user already exists
     const existingUser = await userRepository.findByEmail(email);
@@ -33,6 +37,31 @@ class UserService {
     const token = this.generateToken(user);
 
     return { user, token };
+  }
+
+  // Admin-only: register an instructor
+  async registerInstructor(userData) {
+    const { email, password, firstName, lastName } = userData;
+
+    const existingUser = await userRepository.findByEmail(email);
+    if (existingUser) {
+      const error = new Error('User with this email already exists');
+      error.statusCode = 400;
+      throw error;
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const userId = await userRepository.create({
+      email,
+      password: hashedPassword,
+      firstName,
+      lastName,
+      role: 'instructor'
+    });
+
+    const user = await userRepository.findById(userId);
+    return { user };
   }
 
   async loginUser(email, password) {
