@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 class UserService {
+  // Public registration - students only
   async registerUser(userData) {
     const { email, password, firstName, lastName } = userData;
 
