@@ -1,4 +1,5 @@
 const express = require('express');
+const path = require('path');
 const dotenv = require('dotenv');
 const corsMiddleware = require('./config/cors');
 const { testConnection } = require('./config/database');
@@ -7,33 +8,52 @@ const errorHandler = require('./middlewares/errorHandler');
 // Load environment variables
 dotenv.config();
 
-// Import routes
+// ── Route imports ─────────────────────────────────────────────────────────────
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
+const assignmentRoutes = require('./routes/assignmentRoutes');
+const quizRoutes = require('./routes/quizRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const progressRoutes = require('./routes/progressRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
-// Initialize express app
 const app = express();
 
-// Middlewares
+// ── CORS ──────────────────────────────────────────────────────────────────────
 app.use(corsMiddleware);
+
+// ── Stripe webhook must receive raw body — register BEFORE express.json() ─────
+app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+
+// ── Body parsing ──────────────────────────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
+// ── Static uploads (serve uploaded files) ────────────────────────────────────
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+
+// ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/users', userRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
+app.use('/api/assignments', assignmentRoutes);
+app.use('/api/quizzes', quizRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/progress', progressRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
-// Health check route
-app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'LMS Backend is running' });
+// ── Health check ──────────────────────────────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'OK', message: 'LMS Backend is running' });
 });
 
-// Error handling middleware (must be last)
+// ── Global error handler (must be last) ──────────────────────────────────────
 app.use(errorHandler);
 
-// Start server
+// ── Start server ──────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
