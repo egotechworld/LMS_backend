@@ -2,13 +2,14 @@ const { pool } = require('../config/database');
 
 class NotificationRepository {
   async findByUser(userId, { page = 1, limit = 20 } = {}) {
-    const offset = (page - 1) * limit;
+    const limitInt = parseInt(limit);
+    const offsetInt = parseInt((page - 1) * limitInt);
     const [rows] = await pool.execute(
       `SELECT * FROM notifications
        WHERE user_id = ?
        ORDER BY created_at DESC
-       LIMIT ? OFFSET ?`,
-      [userId, limit, offset]
+       LIMIT ${limitInt} OFFSET ${offsetInt}`,
+      [userId]
     );
     return rows;
   }
