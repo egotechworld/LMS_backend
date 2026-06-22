@@ -1,10 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const courseController = require('../controllers/courseController');
+const { thumbnailUpload } = require('../middlewares/uploadMiddleware');
 const { authenticate, authorize } = require('../middlewares/authMiddleware');
 const { body } = require('express-validator');
-
-const upload = require('../middlewares/uploadMiddleware');
 
 // Public routes
 router.get('/', courseController.getAllCourses);
@@ -15,7 +14,7 @@ router.post(
   '/', 
   authenticate, 
   authorize('instructor', 'admin'), 
-  upload.single('thumbnail'),
+  thumbnailUpload.single('thumbnail'),
   courseController.createCourse
 );
 

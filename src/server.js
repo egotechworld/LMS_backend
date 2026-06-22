@@ -11,6 +11,7 @@ dotenv.config();
 // ── Route imports ─────────────────────────────────────────────────────────────
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
+const lessonRoutes = require('./routes/lessonRoutes');
 const enrollmentRoutes = require('./routes/enrollmentRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const quizRoutes = require('./routes/quizRoutes');
@@ -37,6 +38,7 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 // ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/users', userRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/lessons', lessonRoutes);
 app.use('/api/enrollments', enrollmentRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/quizzes', quizRoutes);
@@ -59,6 +61,9 @@ const PORT = process.env.PORT || 5000;
 const startServer = async () => {
   try {
     await testConnection();
+    require('./utils/phase1_migration')();
+    require('./utils/alter_lesson_progress')();
+    require('./utils/seed_demo_data')();
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV}`);
