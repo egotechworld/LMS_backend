@@ -9,7 +9,17 @@ class CourseController {
         return res.status(400).json({ success: false, errors: errors.array() });
       }
 
-      const courseData = req.body;
+      const courseData = { ...req.body };
+      
+      // Handle file upload
+      if (req.file) {
+        courseData.thumbnail = `/uploads/thumbnails/${req.file.filename}`;
+      }
+      
+      // Parse is_free since FormData sends strings
+      if (courseData.is_free === 'true') courseData.is_free = true;
+      if (courseData.is_free === 'false') courseData.is_free = false;
+
       const instructorId = req.user.id;
       const course = await courseService.createCourse({ ...courseData, instructorId });
 

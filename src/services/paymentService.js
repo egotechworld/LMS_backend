@@ -163,6 +163,54 @@ class PaymentService {
     const perCourse = await orderRepository.getRevenuePerCourse();
     return { totalRevenue: total, perCourse };
   }
+
+  /**
+   * DEMO PAYMENT FLOW
+   * Bypasses Stripe completely for testing without keys.
+   */
+  async processDemoCheckout(studentId, courseId) {
+    const course = await courseRepository.findById(courseId);
+    if (!course) throw new ApiError('Course not found', 404);
+    if (course.is_free) throw new ApiError('This course is free — enrol directly', 400);
+
+    const existing = await enrollmentRepository.findByStudentAndCourse(studentId, courseId);
+    if (existing) throw new ApiError('You are already enrolled in this course', 400);
+
+    const amountCents = parseInt(course.price);
+    const demoSessionId = 'demo_session_' + Date.now();
+    const demoPaymentIntent = 'demo_pi_' + Date.now();
+
+    // 1. Create paid order immediately
+    await orderRepository.create({
+      studentId,
+      courseId,
+      stripeSessionId: demoSessionId,
+      amount: amountCents,
+      currency: course.currency || 'usd',
+    });
+
+    await orderRepository.markPaid(demoSessionId, demoPaymentIntent, 'http://localhost/demo-receipt');
+
+    // 2. Enrol student
+    await enrollmentRepository.create(studentId, courseId);
+    await require('../config/database').pool.execute(
+      `UPDATE enrollments SET payment_status = 'paid' WHERE student_id = ? AND course_id = ?`,
+      [studentId, courseId]
+    );
+
+    // 3. Notify instructor
+    if (course.instructor_id) {
+      await createNotification({
+        userId: course.instructor_id,
+        message: `A new student enrolled in "${course.title}" via DEMO payment.`,
+        type: 'new_enrollment',
+        referenceId: courseId,
+        referenceType: 'course',
+      });
+    }
+
+    return { success: true, sessionId: demoSessionId };
+  }
 }
 
 module.exports = new PaymentService();

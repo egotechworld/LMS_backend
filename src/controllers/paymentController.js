@@ -24,6 +24,20 @@ class PaymentController {
   });
 
   /**
+   * POST /api/payment/demo-checkout
+   * Body: { courseId }
+   */
+  demoCheckout = asyncHandler(async (req, res) => {
+    const { courseId } = req.body;
+    if (!courseId) {
+      return res.status(400).json({ success: false, message: 'courseId is required' });
+    }
+
+    const result = await paymentService.processDemoCheckout(req.user.id, parseInt(courseId));
+    res.status(200).json(result);
+  });
+
+  /**
    * POST /api/payment/webhook
    * Raw body required — express.raw() is applied at route level.
    */

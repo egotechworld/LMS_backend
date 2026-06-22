@@ -21,6 +21,14 @@ router.post(
   paymentController.createSession
 );
 
+// POST /api/payment/demo-checkout  — bypass Stripe for testing
+router.post(
+  '/demo-checkout',
+  authenticate,
+  authorize('student'),
+  paymentController.demoCheckout
+);
+
 // GET /api/payment/history  — student's payment receipts
 router.get(
   '/history',
