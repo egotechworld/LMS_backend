@@ -32,7 +32,8 @@ CREATE TABLE courses (
   duration INT COMMENT 'Duration in hours',
   level ENUM('beginner', 'intermediate', 'advanced') DEFAULT 'beginner',
   thumbnail VARCHAR(255),
-  price DECIMAL(10,2) DEFAULT 0.00,
+  price INT DEFAULT 0 COMMENT 'Stored in smallest currency unit (e.g. cents)',
+  currency VARCHAR(10) DEFAULT 'usd',
   is_free TINYINT(1) DEFAULT 1,
   status ENUM('draft', 'published') DEFAULT 'draft',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -259,19 +260,21 @@ CREATE TABLE quiz_attempt_answers (
 );
 
 -- ============================================================
--- PAYMENTS
+-- ORDERS (Payments)
 -- ============================================================
-CREATE TABLE payments (
+CREATE TABLE orders (
   id INT PRIMARY KEY AUTO_INCREMENT,
   student_id INT NOT NULL,
   course_id INT NOT NULL,
-  stripe_payment_id VARCHAR(255),
+  stripe_payment_intent_id VARCHAR(255),
   stripe_session_id VARCHAR(255),
-  amount DECIMAL(10,2) NOT NULL,
+  amount INT NOT NULL COMMENT 'Stored in smallest currency unit (e.g. cents)',
   currency VARCHAR(10) DEFAULT 'usd',
-  status ENUM('pending', 'success', 'failed') DEFAULT 'pending',
+  status ENUM('pending', 'paid', 'failed', 'cancelled', 'refunded') DEFAULT 'pending',
+  receipt_url VARCHAR(500),
   paid_at TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
   INDEX idx_student (student_id),

@@ -2,13 +2,16 @@ const { pool } = require('../config/database');
 
 class CourseRepository {
   async create(courseData) {
-    const { title, description, instructorId, category, duration, level, thumbnail } = courseData;
+    const { title, description, instructorId, category, duration, level, thumbnail, is_free, price, currency } = courseData;
     const query = `
-      INSERT INTO courses (title, description, instructor_id, category, duration, level, thumbnail)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO courses (title, description, instructor_id, category, duration, level, thumbnail, is_free, price, currency)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [result] = await pool.execute(query, [
-      title, description, instructorId, category, duration, level, thumbnail
+      title, description, instructorId, category, duration, level, thumbnail, 
+      is_free !== undefined ? is_free : 1, 
+      price || 0, 
+      currency || 'usd'
     ]);
     return result.insertId;
   }
@@ -46,14 +49,13 @@ class CourseRepository {
 
     query += ` ORDER BY c.created_at DESC`;
 
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 10;
+    const page = parseInt(filters.page, 10) || 1;
+    const limit = parseInt(filters.limit, 10) || 10;
     const offset = (page - 1) * limit;
 
-    query += ` LIMIT ? OFFSET ?`;
-    params.push(limit, offset);
+    query += ` LIMIT ${limit} OFFSET ${offset}`;
 
-    const [rows] = await pool.execute(query, params);
+    const [rows] = await pool.query(query, params);
     return rows;
   }
 

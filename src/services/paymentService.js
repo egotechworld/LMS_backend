@@ -1,5 +1,5 @@
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-const paymentRepository = require('../repositories/paymentRepository');
+const orderRepository = require('../repositories/orderRepository');
 const courseRepository = require('../repositories/courseRepository');
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const ApiError = require('../utils/ApiError');
@@ -20,7 +20,8 @@ class PaymentService {
     const existing = await enrollmentRepository.findByStudentAndCourse(studentId, courseId);
     if (existing) throw new ApiError('You are already enrolled in this course', 400);
 
-    const amountCents = Math.round(parseFloat(course.price) * 100);
+    // Price is now stored in cents in the DB
+    const amountCents = parseInt(course.price);
     if (amountCents <= 0) throw new ApiError('Invalid course price', 400);
 
     const session = await stripe.checkout.sessions.create({
@@ -29,7 +30,7 @@ class PaymentService {
       line_items: [
         {
           price_data: {
-            currency: 'usd',
+            currency: course.currency || 'usd',
             product_data: { name: course.title, description: course.description || '' },
             unit_amount: amountCents,
           },
@@ -41,13 +42,13 @@ class PaymentService {
       cancel_url: `${baseUrl}/payment/cancel`,
     });
 
-    // Record pending payment
-    await paymentRepository.create({
+    // Record pending order
+    await orderRepository.create({
       studentId,
       courseId,
       stripeSessionId: session.id,
-      amount: course.price,
-      currency: 'usd',
+      amount: amountCents,
+      currency: course.currency || 'usd',
     });
 
     return { sessionId: session.id, url: session.url };
@@ -69,13 +70,24 @@ class PaymentService {
       throw new ApiError(`Webhook signature verification failed: ${err.message}`, 400);
     }
 
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      await this._handleSuccessfulPayment(session);
-    }
+    try {
+      if (event.type === 'checkout.session.completed') {
+        const session = event.data.object;
+        await this._handleSuccessfulPayment(session);
+      }
 
-    if (event.type === 'checkout.session.async_payment_failed') {
-      await paymentRepository.markFailed(event.data.object.id);
+      if (event.type === 'checkout.session.async_payment_failed') {
+        await orderRepository.markFailed(event.data.object.id);
+      }
+      
+      if (event.type === 'charge.refunded') {
+        const charge = event.data.object;
+        await orderRepository.markRefunded(charge.payment_intent);
+      }
+    } catch (err) {
+      console.error('Error handling webhook event:', err);
+      // We log but don't necessarily throw a 500 if it's e.g. already processed, 
+      // though throwing will cause Stripe to retry.
     }
 
     return { received: true };
@@ -86,8 +98,33 @@ class PaymentService {
     const sId = parseInt(studentId);
     const cId = parseInt(courseId);
 
+    // Check if order already exists and is paid (idempotency)
+    const order = await orderRepository.findBySessionId(session.id);
+    if (!order) {
+      console.warn('Order not found for session:', session.id);
+      return;
+    }
+    if (order.status === 'paid') {
+      return; // Already processed
+    }
+
+    // Retrieve payment intent to get receipt URL
+    let receiptUrl = null;
+    if (session.payment_intent) {
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(session.payment_intent, {
+          expand: ['latest_charge']
+        });
+        if (paymentIntent.latest_charge && paymentIntent.latest_charge.receipt_url) {
+          receiptUrl = paymentIntent.latest_charge.receipt_url;
+        }
+      } catch (err) {
+        console.error('Failed to retrieve payment intent:', err);
+      }
+    }
+
     // Mark payment success
-    await paymentRepository.markSuccess(session.id, session.payment_intent);
+    await orderRepository.markPaid(session.id, session.payment_intent, receiptUrl);
 
     // Enrol student automatically
     const existing = await enrollmentRepository.findByStudentAndCourse(sId, cId);
@@ -114,16 +151,16 @@ class PaymentService {
   }
 
   async getPaymentHistory(studentId) {
-    return paymentRepository.findByStudent(studentId);
+    return orderRepository.findByStudent(studentId);
   }
 
   async getAllTransactions({ page, limit }) {
-    return paymentRepository.findAll({ page, limit });
+    return orderRepository.findAll({ page, limit });
   }
 
   async getRevenueStats() {
-    const total = await paymentRepository.getTotalRevenue();
-    const perCourse = await paymentRepository.getRevenuePerCourse();
+    const total = await orderRepository.getTotalRevenue();
+    const perCourse = await orderRepository.getRevenuePerCourse();
     return { totalRevenue: total, perCourse };
   }
 }
