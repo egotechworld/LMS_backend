@@ -3,14 +3,12 @@ const courseRepository = require('../repositories/courseRepository');
 const ApiError = require('../utils/ApiError');
 
 class LessonService {
-  async createLesson(instructorId, lessonData) {
+  async createLesson(user, lessonData) {
     const course = await courseRepository.findById(lessonData.course_id);
     if (!course) throw new ApiError('Course not found', 404);
     
     // Ensure the instructor owns the course or is admin
-    if (course.instructor_id !== instructorId) {
-      // Need a way to check admin role, assuming handled by authorize middleware or we check explicitly
-      // For now, allow if it's the instructor. 
+    if (course.instructor_id !== user.id && user.role !== 'admin') {
       throw new ApiError('Not authorized to add lessons to this course', 403);
     }
 
@@ -28,11 +26,11 @@ class LessonService {
     return lesson;
   }
 
-  async updateLesson(instructorId, id, updateData) {
+  async updateLesson(user, id, updateData) {
     const lesson = await this.getLessonById(id);
     const course = await courseRepository.findById(lesson.course_id);
     
-    if (course.instructor_id !== instructorId) {
+    if (course.instructor_id !== user.id && user.role !== 'admin') {
       throw new ApiError('Not authorized to update this lesson', 403);
     }
 
@@ -40,11 +38,11 @@ class LessonService {
     return this.getLessonById(id);
   }
 
-  async deleteLesson(instructorId, id) {
+  async deleteLesson(user, id) {
     const lesson = await this.getLessonById(id);
     const course = await courseRepository.findById(lesson.course_id);
     
-    if (course.instructor_id !== instructorId) {
+    if (course.instructor_id !== user.id && user.role !== 'admin') {
       throw new ApiError('Not authorized to delete this lesson', 403);
     }
 

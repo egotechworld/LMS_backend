@@ -18,7 +18,7 @@ class LessonController {
       if (lessonData.is_published === 'true') lessonData.is_published = true;
       if (lessonData.is_published === 'false') lessonData.is_published = false;
 
-      const lesson = await lessonService.createLesson(req.user.id, lessonData);
+      const lesson = await lessonService.createLesson(req.user, lessonData);
 
       res.status(201).json({ success: true, data: lesson });
     } catch (error) {
@@ -60,7 +60,7 @@ class LessonController {
       if (updateData.is_published === 'true') updateData.is_published = true;
       if (updateData.is_published === 'false') updateData.is_published = false;
 
-      const updatedLesson = await lessonService.updateLesson(req.user.id, parseInt(id), updateData);
+      const updatedLesson = await lessonService.updateLesson(req.user, parseInt(id), updateData);
       
       res.status(200).json({ success: true, data: updatedLesson });
     } catch (error) {
@@ -71,7 +71,7 @@ class LessonController {
   async deleteLesson(req, res, next) {
     try {
       const { id } = req.params;
-      await lessonService.deleteLesson(req.user.id, parseInt(id));
+      await lessonService.deleteLesson(req.user, parseInt(id));
       res.status(200).json({ success: true, message: 'Lesson deleted successfully' });
     } catch (error) {
       next(error);

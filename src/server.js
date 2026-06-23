@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const dotenv = require('dotenv');
 const corsMiddleware = require('./config/cors');
-const { testConnection } = require('./config/database');
+const { testConnection, pool } = require('./config/database');
 const errorHandler = require('./middlewares/errorHandler');
 
 // Load environment variables
@@ -52,6 +52,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'OK', message: 'LMS Backend is running' });
 });
 
+// Catch-all 404 handler
+app.use((req, res, next) => {
+  res.status(404).json({
+    success: false,
+    error: { message: `Route not found: ${req.method} ${req.originalUrl}` }
+  });
+});
+
 // ── Global error handler (must be last) ──────────────────────────────────────
 app.use(errorHandler);
 
@@ -63,7 +71,23 @@ const startServer = async () => {
     await testConnection();
     require('./utils/phase1_migration')();
     require('./utils/alter_lesson_progress')();
+    require('./utils/phase2_migration')();
+    require('./utils/alter_lessons_table')();
     require('./utils/seed_demo_data')();
+    
+    // DB Test
+    setTimeout(async () => {
+      try {
+        const fs = require('fs');
+        const [c] = await pool.query('SELECT * FROM courses WHERE id = 3');
+        const [u] = await pool.query('SELECT * FROM users');
+        fs.writeFileSync('f:/LMSEGO/LMS_Backend/test_debug.json', JSON.stringify({ courses: c, users: u }));
+      } catch (e) {
+        const fs = require('fs');
+        fs.writeFileSync('f:/LMSEGO/LMS_Backend/test_debug.json', JSON.stringify({ error: e.message }));
+      }
+    }, 2000);
+
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📍 Environment: ${process.env.NODE_ENV}`);
