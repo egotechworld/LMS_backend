@@ -9,7 +9,9 @@ const errorHandler = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({
       success: false,
-      error: { message: `File upload error: ${err.message}` },
+      message: `File upload error: ${err.message}`,
+      code: err.code || 'UPLOAD_ERROR',
+      errors: [],
     });
   }
 
@@ -22,10 +24,10 @@ const errorHandler = (err, req, res, next) => {
 
   res.status(statusCode).json({
     success: false,
-    error: {
-      message,
-      ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
-    },
+    message,
+    code: err.code || 'INTERNAL_ERROR',
+    errors: err.errors || [],
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
   });
 };
 

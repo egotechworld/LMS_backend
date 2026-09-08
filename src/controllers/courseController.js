@@ -35,8 +35,11 @@ class CourseController {
 
   async getAllCourses(req, res, next) {
     try {
-      const { category, search, page = 1, limit = 10 } = req.query;
-      const courses = await courseService.getAllCourses({ category, search, page, limit });
+      const { category, search, status, scope, page = 1, limit = 10 } = req.query;
+      const courses = await courseService.getAllCourses(
+        { category, search, status, scope, page, limit },
+        req.user
+      );
 
       res.status(200).json({
         success: true,
@@ -50,7 +53,7 @@ class CourseController {
   async getCourseById(req, res, next) {
     try {
       const { id } = req.params;
-      const course = await courseService.getCourseById(id);
+      const course = await courseService.getCourseById(id, req.user);
 
       res.status(200).json({
         success: true,
@@ -65,7 +68,7 @@ class CourseController {
     try {
       const { id } = req.params;
       const updateData = req.body;
-      const updatedCourse = await courseService.updateCourse(id, updateData);
+      const updatedCourse = await courseService.updateCourse(id, updateData, req.user);
 
       res.status(200).json({
         success: true,
@@ -80,7 +83,7 @@ class CourseController {
   async deleteCourse(req, res, next) {
     try {
       const { id } = req.params;
-      await courseService.deleteCourse(id);
+      await courseService.deleteCourse(id, req.user);
 
       res.status(200).json({
         success: true,

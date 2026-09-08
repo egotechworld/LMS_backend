@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 const courseController = require('../controllers/courseController');
 const { thumbnailUpload } = require('../middlewares/uploadMiddleware');
-const { authenticate, authorize } = require('../middlewares/authMiddleware');
+const { authenticate, optionalAuthenticate, authorize } = require('../middlewares/authMiddleware');
 const { body } = require('express-validator');
 
 // Public routes
-router.get('/', courseController.getAllCourses);
-router.get('/:id', courseController.getCourseById);
+router.get('/', optionalAuthenticate, courseController.getAllCourses);
+router.get('/:id', optionalAuthenticate, courseController.getCourseById);
 
 // Protected routes - Instructor/Admin only
 router.post(

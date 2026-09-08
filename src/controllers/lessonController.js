@@ -32,7 +32,7 @@ class LessonController {
       // Depending on requirements, we might need to verify if user is enrolled
       // to see non-published lessons or video URLs, but for now we'll return all
       // We will filter published on frontend or in service based on role.
-      const lessons = await lessonService.getLessonsByCourse(parseInt(courseId));
+      const lessons = await lessonService.getLessonsByCourse(req.user, parseInt(courseId));
       
       // If student, only return published lessons
       let filteredLessons = lessons;

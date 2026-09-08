@@ -112,7 +112,11 @@ class UserService {
       throw error;
     }
 
-    // Hash password if it's being updated
+    const allowedFields = ['firstName', 'lastName', 'profilePicture', 'password'];
+    updateData = Object.fromEntries(
+      Object.entries(updateData).filter(([key]) => allowedFields.includes(key))
+    );
+
     if (updateData.password) {
       updateData.password = await bcrypt.hash(updateData.password, 10);
     }

@@ -1,37 +1,41 @@
 const jwt = require('jsonwebtoken');
+const { COOKIE_NAME } = require('../utils/authCookie');
+const ApiError = require('../utils/ApiError');
 
 const authenticate = (req, res, next) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.cookies?.[COOKIE_NAME];
 
     if (!token) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Authentication token required' 
-      });
+      return next(new ApiError('Authentication required', 401, 'AUTH_REQUIRED'));
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;
     next();
-  } catch (error) {
-    return res.status(401).json({ 
-      success: false, 
-      message: 'Invalid or expired token' 
-    });
+  } catch (_error) {
+    return next(new ApiError('Invalid or expired session', 401, 'INVALID_SESSION'));
   }
+};
+
+const optionalAuthenticate = (req, _res, next) => {
+  const token = req.cookies?.[COOKIE_NAME];
+  if (!token) return next();
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (_error) {
+    // Public routes remain public; invalid cookies do not grant any access.
+  }
+  next();
 };
 
 const authorize = (...roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access denied' 
-      });
+      return next(new ApiError('Access denied', 403, 'FORBIDDEN'));
     }
     next();
   };
 };
 
-module.exports = { authenticate, authorize };
+module.exports = { authenticate, optionalAuthenticate, authorize };

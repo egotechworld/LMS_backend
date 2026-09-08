@@ -1,6 +1,8 @@
 const enrollmentRepository = require('../repositories/enrollmentRepository');
 const courseRepository = require('../repositories/courseRepository');
 const userRepository = require('../repositories/userRepository');
+const ApiError = require('../utils/ApiError');
+const { createNotification } = require('../utils/notificationHelper');
 
 class EnrollmentService {
   async enrollStudent(studentId, courseId) {
@@ -19,6 +21,12 @@ class EnrollmentService {
       error.statusCode = 404;
       throw error;
     }
+    if (course.status !== 'published') {
+      throw new ApiError('Course is not available for enrollment', 400, 'COURSE_NOT_PUBLISHED');
+    }
+    if (!course.is_free) {
+      throw new ApiError('Paid courses require verified checkout', 400, 'PAYMENT_REQUIRED');
+    }
 
     // Check if already enrolled
     const existingEnrollment = await enrollmentRepository.findByStudentAndCourse(studentId, courseId);
@@ -29,6 +37,13 @@ class EnrollmentService {
     }
 
     const enrollmentId = await enrollmentRepository.create(studentId, courseId);
+    await createNotification({
+      userId: course.instructor_id,
+      message: `A new student enrolled in "${course.title}".`,
+      type: 'new_enrollment',
+      referenceId: courseId,
+      referenceType: 'course',
+    });
     return await enrollmentRepository.findById(enrollmentId);
   }
 
@@ -36,7 +51,12 @@ class EnrollmentService {
     return await enrollmentRepository.findByStudent(studentId);
   }
 
-  async getEnrollmentsByCourse(courseId) {
+  async getEnrollmentsByCourse(courseId, requester) {
+    const course = await courseRepository.findById(courseId);
+    if (!course) throw new ApiError('Course not found', 404, 'COURSE_NOT_FOUND');
+    if (requester.role !== 'admin' && Number(course.instructor_id) !== Number(requester.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     return await enrollmentRepository.findByCourse(courseId);
   }
 

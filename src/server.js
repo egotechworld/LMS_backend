@@ -1,14 +1,14 @@
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
-const dotenv = require('dotenv');
+const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const corsMiddleware = require('./config/cors');
-const { testConnection, pool } = require('./config/database');
+const { testConnection } = require('./config/database');
 const errorHandler = require('./middlewares/errorHandler');
 
-// Load environment variables
-dotenv.config();
-
-// ── Route imports ─────────────────────────────────────────────────────────────
 const userRoutes = require('./routes/userRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const lessonRoutes = require('./routes/lessonRoutes');
@@ -21,21 +21,32 @@ const progressRoutes = require('./routes/progressRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 
 const app = express();
-
-// ── CORS ──────────────────────────────────────────────────────────────────────
+app.disable('x-powered-by');
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(corsMiddleware);
+app.use(cookieParser());
 
-// ── Stripe webhook must receive raw body — register BEFORE express.json() ─────
 app.use('/api/payment/webhook', express.raw({ type: 'application/json' }));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-// ── Body parsing ──────────────────────────────────────────────────────────────
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many authentication attempts. Please try again later.',
+    code: 'AUTH_RATE_LIMITED',
+    errors: [],
+  },
+});
+app.use('/api/users/login', authLimiter);
+app.use('/api/users/register', authLimiter);
 
-// ── Static uploads (serve uploaded files) ────────────────────────────────────
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// ── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/users', userRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/lessons', lessonRoutes);
@@ -47,57 +58,45 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
-// ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'OK', message: 'LMS Backend is running' });
+  res.json({ success: true, data: { status: 'ok' } });
 });
 
-// Catch-all 404 handler
-app.use((req, res, next) => {
+app.use((req, res) => {
   res.status(404).json({
     success: false,
-    error: { message: `Route not found: ${req.method} ${req.originalUrl}` }
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+    code: 'ROUTE_NOT_FOUND',
+    errors: [],
   });
 });
-
-// ── Global error handler (must be last) ──────────────────────────────────────
 app.use(errorHandler);
 
-// ── Start server ──────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
-
 const startServer = async () => {
-  try {
-    await testConnection();
-    require('./utils/phase1_migration')();
-    require('./utils/alter_lesson_progress')();
-    require('./utils/phase2_migration')();
-    require('./utils/alter_lessons_table')();
-    require('./utils/seed_demo_data')();
-    
-    // DB Test
-    setTimeout(async () => {
-      try {
-        const fs = require('fs');
-        const [c] = await pool.query('SELECT * FROM courses WHERE id = 3');
-        const [u] = await pool.query('SELECT * FROM users');
-        fs.writeFileSync('f:/LMSEGO/LMS_Backend/test_debug.json', JSON.stringify({ courses: c, users: u }));
-      } catch (e) {
-        const fs = require('fs');
-        fs.writeFileSync('f:/LMSEGO/LMS_Backend/test_debug.json', JSON.stringify({ error: e.message }));
-      }
-    }, 2000);
+  await testConnection();
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📍 Environment: ${process.env.NODE_ENV}`);
-    });
-  } catch (error) {
-    console.error('Failed to start server:', error);
-    process.exit(1);
+  if (process.env.AUTO_MIGRATE === 'true') {
+    await require('./utils/phase1_migration')();
+    await require('./utils/alter_lesson_progress')();
+    await require('./utils/phase2_migration')();
+    await require('./utils/alter_lessons_table')();
   }
+  if (process.env.SEED_DEMO_DATA === 'true' && process.env.NODE_ENV !== 'production') {
+    await require('./utils/seed_demo_data')();
+  }
+
+  const port = process.env.PORT || 5000;
+  return app.listen(port, '0.0.0.0', () => {
+    console.log(`LMS API listening on port ${port} (${process.env.NODE_ENV || 'development'})`);
+  });
 };
 
-startServer();
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error('Failed to start server:', error.message);
+    process.exit(1);
+  });
+}
 
 module.exports = app;
+module.exports.startServer = startServer;

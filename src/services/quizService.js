@@ -4,11 +4,21 @@ const enrollmentRepository = require('../repositories/enrollmentRepository');
 const ApiError = require('../utils/ApiError');
 const { createNotification } = require('../utils/notificationHelper');
 const { buildShuffledQuiz } = require('../utils/shuffleQuiz');
+const courseRepository = require('../repositories/courseRepository');
+const lessonRepository = require('../repositories/lessonRepository');
 
 class QuizService {
   // ── Quiz management (instructor) ─────────────────────────────────────────
 
   async createQuiz(instructorId, { lessonId, courseId, title, timeLimitMinutes, allowRetake }) {
+    const course = await courseRepository.findById(courseId);
+    const lesson = await lessonRepository.findById(lessonId);
+    if (!course || !lesson || Number(lesson.course_id) !== Number(courseId)) {
+      throw new ApiError('Lesson does not belong to this course', 400, 'LESSON_COURSE_MISMATCH');
+    }
+    if (Number(course.instructor_id) !== Number(instructorId)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     // One quiz per lesson
     const existing = await quizRepository.findByLesson(lessonId);
     if (existing) throw new ApiError('A quiz already exists for this lesson', 400);
@@ -143,6 +153,12 @@ class QuizService {
    */
   async startAttempt(studentId, quizId) {
     const quiz = await this._getQuizOrThrow(quizId);
+    const enrollment = await enrollmentRepository.findByStudentAndCourse(studentId, quiz.course_id);
+    if (!enrollment) throw new ApiError('You are not enrolled in this course', 403, 'ENROLLMENT_REQUIRED');
+    const lessonComplete = await progressRepository.isLessonComplete(studentId, quiz.lesson_id);
+    if (!lessonComplete) {
+      throw new ApiError('Complete the lesson before taking the quiz', 403, 'LESSON_COMPLETION_REQUIRED');
+    }
 
     // Retake guard
     const prior = await quizRepository.getAttemptsByStudent(quizId, studentId);

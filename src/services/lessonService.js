@@ -1,6 +1,7 @@
 const lessonRepository = require('../repositories/lessonRepository');
 const courseRepository = require('../repositories/courseRepository');
 const ApiError = require('../utils/ApiError');
+const enrollmentRepository = require('../repositories/enrollmentRepository');
 
 class LessonService {
   async createLesson(user, lessonData) {
@@ -16,7 +17,17 @@ class LessonService {
     return this.getLessonById(insertId);
   }
 
-  async getLessonsByCourse(courseId) {
+  async getLessonsByCourse(user, courseId) {
+    const course = await courseRepository.findById(courseId);
+    if (!course) throw new ApiError('Course not found', 404, 'COURSE_NOT_FOUND');
+    if (user.role === 'student') {
+      const enrollment = await enrollmentRepository.findByStudentAndCourse(user.id, courseId);
+      if (!enrollment) {
+        throw new ApiError('Enrollment required to access lessons', 403, 'ENROLLMENT_REQUIRED');
+      }
+    } else if (user.role === 'instructor' && Number(course.instructor_id) !== Number(user.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     return lessonRepository.findByCourseId(courseId);
   }
 

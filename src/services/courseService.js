@@ -1,4 +1,5 @@
 const courseRepository = require('../repositories/courseRepository');
+const ApiError = require('../utils/ApiError');
 
 class CourseService {
   async createCourse(courseData) {
@@ -11,26 +12,35 @@ class CourseService {
     return await courseRepository.findById(courseId);
   }
 
-  async getAllCourses(filters) {
-    return await courseRepository.findAll(filters);
+  async getAllCourses(filters, viewer) {
+    return await courseRepository.findAll(filters, viewer);
   }
 
-  async getCourseById(id) {
+  async getCourseById(id, viewer) {
     const course = await courseRepository.findById(id);
     if (!course) {
       const error = new Error('Course not found');
       error.statusCode = 404;
       throw error;
     }
+    const canSeeDraft = viewer?.role === 'admin'
+      || (viewer?.role === 'instructor' && Number(viewer.id) === Number(course.instructor_id));
+    if (course.status !== 'published' && !canSeeDraft) {
+      throw new ApiError('Course not found', 404, 'COURSE_NOT_FOUND');
+    }
     return course;
   }
 
-  async updateCourse(id, updateData) {
+  async updateCourse(id, updateData, actor) {
     const course = await courseRepository.findById(id);
     if (!course) {
       const error = new Error('Course not found');
       error.statusCode = 404;
       throw error;
+    }
+
+    if (actor.role !== 'admin' && Number(course.instructor_id) !== Number(actor.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
     }
 
     if (updateData.is_free !== undefined) {
@@ -48,7 +58,7 @@ class CourseService {
     return await courseRepository.findById(id);
   }
 
-  async deleteCourse(id) {
+  async deleteCourse(id, actor) {
     const course = await courseRepository.findById(id);
     if (!course) {
       const error = new Error('Course not found');
@@ -56,6 +66,9 @@ class CourseService {
       throw error;
     }
 
+    if (actor.role !== 'admin' && Number(course.instructor_id) !== Number(actor.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     await courseRepository.delete(id);
   }
 }

@@ -18,7 +18,7 @@ class AssignmentController {
     const fileUrl = req.file ? `/uploads/assignments/${req.file.filename}` : null;
     const fileName = req.file ? req.file.originalname : null;
 
-    const assignment = await assignmentService.createAssignment(req.user.id, {
+    const assignment = await assignmentService.createAssignment(req.user, {
       courseId: parseInt(courseId),
       title,
       description,
@@ -33,13 +33,14 @@ class AssignmentController {
 
   getAssignmentsByCourse = asyncHandler(async (req, res) => {
     const assignments = await assignmentService.getAssignmentsByCourse(
-      parseInt(req.params.courseId)
+      parseInt(req.params.courseId),
+      req.user
     );
     res.json({ success: true, data: assignments });
   });
 
   getAssignment = asyncHandler(async (req, res) => {
-    const assignment = await assignmentService.getAssignmentById(parseInt(req.params.id));
+    const assignment = await assignmentService.getAssignmentById(parseInt(req.params.id), req.user);
     res.json({ success: true, data: assignment });
   });
 
@@ -112,7 +113,7 @@ class AssignmentController {
   });
 
   getGrade = asyncHandler(async (req, res) => {
-    const grade = await assignmentService.getGrade(parseInt(req.params.submissionId));
+    const grade = await assignmentService.getGrade(parseInt(req.params.submissionId), req.user);
     res.json({ success: true, data: grade });
   });
 }

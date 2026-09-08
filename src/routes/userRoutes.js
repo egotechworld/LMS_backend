@@ -15,6 +15,7 @@ const registerValidation = [
 // Public routes
 router.post('/register', registerValidation, userController.register);
 router.post('/login', userController.login);
+router.post('/logout', userController.logout);
 
 // Protected routes
 router.get('/me', authenticate, userController.getProfile);

@@ -35,7 +35,7 @@ class EnrollmentController {
   async getCourseEnrollments(req, res, next) {
     try {
       const { courseId } = req.params;
-      const enrollments = await enrollmentService.getEnrollmentsByCourse(courseId);
+      const enrollments = await enrollmentService.getEnrollmentsByCourse(courseId, req.user);
 
       res.status(200).json({
         success: true,

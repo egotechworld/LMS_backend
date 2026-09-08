@@ -5,14 +5,20 @@ const enrollmentRepository = require('../repositories/enrollmentRepository');
 const { pool } = require('../config/database');
 const ApiError = require('../utils/ApiError');
 const { createNotification, createBulkNotifications } = require('../utils/notificationHelper');
+const courseRepository = require('../repositories/courseRepository');
 
 class AssignmentService {
   // ── Assignments ──────────────────────────────────────────────────────────
 
-  async createAssignment(instructorId, data) {
+  async createAssignment(requester, data) {
+    const course = await courseRepository.findById(data.courseId);
+    if (!course) throw new ApiError('Course not found', 404, 'COURSE_NOT_FOUND');
+    if (requester.role !== 'admin' && Number(course.instructor_id) !== Number(requester.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     const assignmentId = await assignmentRepository.create({
       ...data,
-      createdBy: instructorId,
+      createdBy: requester.id,
     });
 
     const assignment = await assignmentRepository.findById(assignmentId);
@@ -33,13 +39,33 @@ class AssignmentService {
     return assignment;
   }
 
-  async getAssignmentsByCourse(courseId) {
+  async getAssignmentsByCourse(courseId, requester) {
+    const course = await courseRepository.findById(courseId);
+    if (!course) throw new ApiError('Course not found', 404, 'COURSE_NOT_FOUND');
+    if (requester.role === 'student') {
+      const enrollment = await enrollmentRepository.findByStudentAndCourse(requester.id, courseId);
+      if (!enrollment) throw new ApiError('Enrollment required', 403, 'ENROLLMENT_REQUIRED');
+    } else if (requester.role === 'instructor' && Number(course.instructor_id) !== Number(requester.id)) {
+      throw new ApiError('You do not own this course', 403, 'COURSE_OWNERSHIP_REQUIRED');
+    }
     return assignmentRepository.findByCourse(courseId);
   }
 
-  async getAssignmentById(id) {
+  async getAssignmentById(id, requester = null) {
     const assignment = await assignmentRepository.findById(id);
     if (!assignment) throw new ApiError('Assignment not found', 404);
+    if (requester?.role === 'student') {
+      const enrollment = await enrollmentRepository.findByStudentAndCourse(
+        requester.id,
+        assignment.course_id
+      );
+      if (!enrollment) throw new ApiError('Enrollment required', 403, 'ENROLLMENT_REQUIRED');
+    } else if (
+      requester?.role === 'instructor'
+      && Number(assignment.created_by) !== Number(requester.id)
+    ) {
+      throw new ApiError('Forbidden', 403, 'ASSIGNMENT_OWNERSHIP_REQUIRED');
+    }
     return assignment;
   }
 
@@ -179,7 +205,14 @@ class AssignmentService {
     return gradeRepository.findBySubmission(submissionId);
   }
 
-  async getGrade(submissionId) {
+  async getGrade(submissionId, requester) {
+    const submission = await submissionRepository.findById(submissionId);
+    if (!submission) throw new ApiError('Submission not found', 404);
+    const assignment = await assignmentRepository.findById(submission.assignment_id);
+    const allowed = requester.role === 'admin'
+      || (requester.role === 'student' && Number(submission.student_id) === Number(requester.id))
+      || (requester.role === 'instructor' && Number(assignment.created_by) === Number(requester.id));
+    if (!allowed) throw new ApiError('Forbidden', 403, 'GRADE_OWNERSHIP_REQUIRED');
     const grade = await gradeRepository.findBySubmission(submissionId);
     if (!grade) throw new ApiError('Grade not found', 404);
     return grade;

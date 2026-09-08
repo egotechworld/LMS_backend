@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const lessonController = require('../controllers/lessonController');
-const { lessonUpload } = require('../middlewares/uploadMiddleware');
+const { lessonUpload, validateLessonFileSizes } = require('../middlewares/uploadMiddleware');
 const { authenticate, authorize } = require('../middlewares/authMiddleware');
 
 // Get lessons for a course (students and instructors)
@@ -17,6 +17,7 @@ router.post(
     { name: 'audio', maxCount: 1 },
     { name: 'document', maxCount: 1 }
   ]),
+  validateLessonFileSizes,
   lessonController.createLesson
 );
 
@@ -30,6 +31,7 @@ router.put(
     { name: 'audio', maxCount: 1 },
     { name: 'document', maxCount: 1 }
   ]),
+  validateLessonFileSizes,
   lessonController.updateLesson
 );
 
